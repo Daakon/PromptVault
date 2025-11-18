@@ -1,0 +1,5 @@
+{
+  "name": "PromptVault",
+  "description": "A smart prompt manager for AI engineers and creators. Organize, tag, and magically enhance your prompts using Gemini.",
+  "requestFramePermissions": []
+}
