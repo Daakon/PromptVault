@@ -1,11 +1,13 @@
 
-export enum AIModel {
-  Gemini = 'Gemini',
-  GPT4 = 'GPT-4',
-  Claude3 = 'Claude 3',
-  Midjourney = 'Midjourney',
-  Other = 'Other'
-}
+export type AIModel = string;
+
+export const DEFAULT_MODELS: AIModel[] = [
+  'Gemini',
+  'GPT-4',
+  'Claude 3',
+  'Midjourney',
+  'Other'
+];
 
 export type Category = string;
 

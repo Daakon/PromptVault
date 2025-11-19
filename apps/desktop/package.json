@@ -1,0 +1,24 @@
+{
+  "name": "@prompt-vault/desktop",
+  "version": "0.1.0",
+  "description": "PromptVault desktop shell",
+  "author": "PromptVault",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://localhost:3000 electron .",
+    "prepare-static": "node scripts/prepare-static.mjs",
+    "build": "npm run prepare-static",
+    "start": "cross-env NODE_ENV=production electron .",
+    "dist": "electron-builder",
+    "package": "npm run prepare-static && npm run dist"
+  },
+  "dependencies": {
+    "cross-env": "^7.0.3"
+  },
+  "devDependencies": {
+    "electron": "29.1.0",
+    "electron-builder": "^24.13.3"
+  }
+}

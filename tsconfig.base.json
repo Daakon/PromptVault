@@ -19,6 +19,12 @@
     "allowJs": true,
     "jsx": "react-jsx",
     "paths": {
+      "@prompt-vault/app": [
+        "./packages/app/src/index.ts"
+      ],
+      "@prompt-vault/app/*": [
+        "./packages/app/src/*"
+      ],
       "@/*": [
         "./*"
       ]

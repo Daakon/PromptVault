@@ -1,10 +1,11 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Search, Command, Github, LayoutGrid, List, Filter, SlidersHorizontal, X, Tag, Settings } from 'lucide-react';
-import { Prompt, AIModel, Category, PromptFormData, QuickFilter } from './types';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Plus, Search, Command, Github, LayoutGrid, List, Filter, SlidersHorizontal, X, Tag, Settings, Pin, Droplet, Minus, XCircle } from 'lucide-react';
+import { Prompt, AIModel, Category, PromptFormData, QuickFilter, DEFAULT_MODELS } from './types';
 import { PromptCard } from './components/PromptCard';
 import { PromptModal } from './components/PromptModal';
 import { CategoryManager } from './components/CategoryManager';
+import { ModelManager } from './components/ModelManager';
 
 // Initial Data
 const INITIAL_CATEGORIES: string[] = [
@@ -17,7 +18,7 @@ const INITIAL_PROMPTS: Prompt[] = [
     title: 'React Component Generator',
     content: 'Act as a senior React developer. Create a reusable, accessible component using TypeScript and Tailwind CSS. Follow modern best practices, including proper prop typing and responsive design. The component to build is: [COMPONENT_NAME].',
     tags: ['react', 'typescript', 'frontend'],
-    models: [AIModel.Gemini, AIModel.GPT4],
+    models: ['Gemini', 'GPT-4'],
     category: 'Coding',
     isFavorite: true,
     lastUsed: Date.now()
@@ -27,7 +28,7 @@ const INITIAL_PROMPTS: Prompt[] = [
     title: 'Technical Blog Post',
     content: 'Write a technical blog post about [TOPIC]. The tone should be professional yet accessible. Structure the post with an engaging introduction, clear headings, code snippets where relevant, and a summary conclusion. Optimize for SEO with keywords: [KEYWORDS].',
     tags: ['writing', 'seo', 'blog'],
-    models: [AIModel.Claude3, AIModel.Gemini],
+    models: ['Claude 3', 'Gemini'],
     category: 'Writing',
     isFavorite: false,
     lastUsed: Date.now() - 100000
@@ -37,7 +38,7 @@ const INITIAL_PROMPTS: Prompt[] = [
     title: 'Python Data Analysis',
     content: 'I have a dataset containing [DATA_DESCRIPTION]. Write a Python script using Pandas and Matplotlib to clean the data, perform exploratory data analysis, and visualize the following trends: [TRENDS].',
     tags: ['python', 'data', 'pandas'],
-    models: [AIModel.GPT4],
+    models: ['GPT-4'],
     category: 'Data Analysis',
     isFavorite: false,
     lastUsed: Date.now() - 200000
@@ -46,8 +47,10 @@ const INITIAL_PROMPTS: Prompt[] = [
 
 const INITIAL_QUICK_FILTERS: QuickFilter[] = [
     { id: 'qf_1', type: 'category', value: 'Coding', label: 'Coding' },
-    { id: 'qf_2', type: 'model', value: AIModel.Gemini, label: 'Gemini' }
+    { id: 'qf_2', type: 'model', value: 'Gemini', label: 'Gemini' }
 ];
+
+const DESKTOP_READY_EVENT = 'promptvault-desktop-ready';
 
 function App() {
   // State
@@ -61,6 +64,11 @@ function App() {
       return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
   });
 
+  const [models, setModels] = useState<AIModel[]>(() => {
+      const saved = localStorage.getItem('pv_models');
+      return saved ? JSON.parse(saved) : DEFAULT_MODELS;
+  });
+
   const [quickFilters, setQuickFilters] = useState<QuickFilter[]>(() => {
       const saved = localStorage.getItem('pv_quick_filters');
       return saved ? JSON.parse(saved) : INITIAL_QUICK_FILTERS;
@@ -72,10 +80,83 @@ function App() {
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
+  const [isModelManagerOpen, setIsModelManagerOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | undefined>(undefined);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [desktopAlwaysOnTop, setDesktopAlwaysOnTop] = useState<boolean | null>(null);
+  const [desktopOpacity, setDesktopOpacity] = useState<number | null>(null);
+  const [isDesktopControlsOpen, setIsDesktopControlsOpen] = useState(false);
+  const isElectronShell = typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('electron');
+  const [hasDesktopBridge, setHasDesktopBridge] = useState(
+    () => typeof window !== 'undefined' && (Boolean(window.desktop) || Boolean(window.promptvaultDesktopReady) || isElectronShell)
+  );
+  const desktopControlsRef = useRef<HTMLDivElement | null>(null);
+  const isDesktopShell = isElectronShell || hasDesktopBridge;
 
   // Persistence
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const attachFromRequire = () => {
+      if (!window.desktop && window.require) {
+        try {
+          const electron = window.require('electron');
+          if (electron?.ipcRenderer) {
+            const ipcRenderer = electron.ipcRenderer;
+            window.desktop = {
+              version: 'renderer-polyfill',
+              toggleAlwaysOnTop: () => ipcRenderer.invoke('desktop:toggle-always-on-top'),
+              getAlwaysOnTop: () => ipcRenderer.invoke('desktop:get-always-on-top'),
+              onAlwaysOnTopChanged: (callback) => {
+                if (typeof callback !== 'function') return () => {};
+                const handler = (_event: unknown, value: boolean) => callback(value);
+                ipcRenderer.on('desktop:always-on-top', handler);
+                return () => ipcRenderer.removeListener('desktop:always-on-top', handler);
+              },
+              setOpacity: (value) => ipcRenderer.invoke('desktop:set-opacity', value),
+              getOpacity: () => ipcRenderer.invoke('desktop:get-opacity'),
+              onOpacityChanged: (callback) => {
+                if (typeof callback !== 'function') return () => {};
+                const handler = (_event: unknown, value: number) => callback(value);
+                ipcRenderer.on('desktop:opacity', handler);
+                return () => ipcRenderer.removeListener('desktop:opacity', handler);
+              },
+              minimizeWindow: () => ipcRenderer.invoke('desktop:minimize'),
+              closeWindow: () => ipcRenderer.invoke('desktop:close')
+            };
+            window.promptvaultDesktopReady = true;
+            setHasDesktopBridge(true);
+          }
+        } catch (error) {
+          console.error('Failed to polyfill desktop bridge', error);
+        }
+      }
+    };
+
+    attachFromRequire();
+
+    const handleReady = () => {
+      setHasDesktopBridge(true);
+    };
+    window.addEventListener(DESKTOP_READY_EVENT, handleReady);
+
+    if (window.desktop || window.promptvaultDesktopReady) {
+      setHasDesktopBridge(true);
+    }
+
+    const interval = window.setInterval(() => {
+      if (window.desktop || window.promptvaultDesktopReady) {
+        setHasDesktopBridge(true);
+        window.clearInterval(interval);
+      }
+    }, 250);
+
+    return () => {
+      window.removeEventListener(DESKTOP_READY_EVENT, handleReady);
+      window.clearInterval(interval);
+    };
+  }, [isElectronShell]);
+
   useEffect(() => {
     localStorage.setItem('pv_prompts', JSON.stringify(prompts));
   }, [prompts]);
@@ -85,6 +166,62 @@ function App() {
   useEffect(() => {
     localStorage.setItem('pv_quick_filters', JSON.stringify(quickFilters));
   }, [quickFilters]);
+  useEffect(() => {
+    localStorage.setItem('pv_models', JSON.stringify(models));
+  }, [models]);
+
+  useEffect(() => {
+    if (!hasDesktopBridge || !window.desktop?.getAlwaysOnTop) {
+      return;
+    }
+    let unsubscribe: (() => void) | void;
+    window.desktop.getAlwaysOnTop()
+      .then(value => setDesktopAlwaysOnTop(value))
+      .catch(() => setDesktopAlwaysOnTop(false));
+    if (window.desktop.onAlwaysOnTopChanged) {
+      const maybe = window.desktop.onAlwaysOnTopChanged((value) => setDesktopAlwaysOnTop(value));
+      if (typeof maybe === 'function') {
+        unsubscribe = maybe;
+      }
+    }
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [hasDesktopBridge]);
+
+  useEffect(() => {
+    if (!hasDesktopBridge || !window.desktop?.getOpacity) {
+      return;
+    }
+    let unsubscribe: (() => void) | void;
+    window.desktop.getOpacity()
+      .then(value => setDesktopOpacity(value))
+      .catch(() => setDesktopOpacity(1));
+    if (window.desktop.onOpacityChanged) {
+      const maybe = window.desktop.onOpacityChanged((value) => setDesktopOpacity(value));
+      if (typeof maybe === 'function') {
+        unsubscribe = maybe;
+      }
+    }
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [hasDesktopBridge]);
+
+  useEffect(() => {
+    if (!isDesktopControlsOpen) return;
+    const handleClick = (event: MouseEvent) => {
+      if (desktopControlsRef.current && !desktopControlsRef.current.contains(event.target as Node)) {
+        setIsDesktopControlsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [isDesktopControlsOpen]);
 
   // Logic
   const handleSavePrompt = (data: PromptFormData) => {
@@ -131,6 +268,53 @@ function App() {
           // If selected category was deleted, reset filter
           if(selectedCategory === cat) setSelectedCategory('All');
       }
+  };
+
+  const handleAddModel = (model: string) => {
+    setModels(prev => [...prev, model]);
+  };
+
+  const handleRemoveModel = (model: string) => {
+    setModels(prev => prev.filter(m => m !== model));
+    setQuickFilters(prev => prev.filter(qf => !(qf.type === 'model' && qf.value === model)));
+    if (selectedModel === model) {
+      setSelectedModel('All');
+    }
+  };
+
+  const handleToggleDesktopPin = async () => {
+    if (!window.desktop?.toggleAlwaysOnTop) {
+      alert('Desktop controls are still starting up—try again in a moment.');
+      return;
+    }
+    try {
+      const nextValue = await window.desktop.toggleAlwaysOnTop();
+      setDesktopAlwaysOnTop(nextValue);
+    } catch (error) {
+      console.error('Failed to toggle desktop pin state', error);
+    }
+  };
+
+  const handleDesktopOpacityChange = async (percent: number) => {
+    if (!window.desktop?.setOpacity) {
+      alert('Desktop controls are still starting up—try again in a moment.');
+      return;
+    }
+    const normalized = Math.min(1, Math.max(0.4, percent / 100));
+    try {
+      const value = await window.desktop.setOpacity(normalized);
+      setDesktopOpacity(value);
+    } catch (error) {
+      console.error('Failed to update desktop opacity', error);
+    }
+  };
+
+  const handleMinimizeWindow = () => {
+    window.desktop?.minimizeWindow?.();
+  };
+
+  const handleCloseWindow = () => {
+    window.desktop?.closeWindow?.();
   };
 
   // Quick Filters Logic
@@ -195,11 +379,15 @@ function App() {
     });
   }, [prompts, searchQuery, selectedCategory, selectedModel]);
 
+  const opacityPercent = desktopOpacity == null ? 100 : Math.round(desktopOpacity * 100);
+  const dragRegionStyle = isDesktopShell ? { WebkitAppRegion: 'drag' as const } : undefined;
+  const noDragRegionStyle = isDesktopShell ? { WebkitAppRegion: 'no-drag' as const } : undefined;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-indigo-500/30">
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800" style={dragRegionStyle}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between" style={noDragRegionStyle}>
           <div className="flex items-center gap-3">
             <div className="bg-indigo-600 p-2 rounded-lg">
                 <Command size={20} className="text-white" />
@@ -209,7 +397,59 @@ function App() {
             </h1>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4" style={noDragRegionStyle}>
+            {isDesktopShell && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleDesktopPin}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${desktopAlwaysOnTop ? 'bg-amber-500/20 text-amber-200 border-amber-400/60' : 'text-slate-400 border-slate-700 hover:text-slate-200 hover:border-slate-500'}`}
+                  title={desktopAlwaysOnTop ? 'Window is pinned on top' : 'Keep window on top'}
+                >
+                  <Pin size={14} className={desktopAlwaysOnTop ? 'fill-current' : ''} />
+                  <span className="hidden md:inline">{desktopAlwaysOnTop ? 'Pinned' : 'Pin'}</span>
+                </button>
+                <div className="relative" ref={desktopControlsRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsDesktopControlsOpen(prev => !prev)}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs text-slate-400 hover:text-slate-200 hover:border-slate-500 transition-colors"
+                    title="Adjust window transparency"
+                  >
+                    <Droplet size={14} />
+                    <span className="hidden md:inline">Opacity</span>
+                  </button>
+                  {isDesktopControlsOpen && (
+                    <div className="absolute right-0 mt-2 w-60 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-4 z-50">
+                      <div className="flex items-center justify-between text-xs text-slate-400 mb-3">
+                        <span>Transparency</span>
+                        <span>{opacityPercent}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={40}
+                        max={100}
+                        value={Math.max(40, opacityPercent)}
+                        onChange={(e) => handleDesktopOpacityChange(Number(e.target.value))}
+                        className="w-full accent-indigo-500"
+                      />
+                      <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
+                        <span>More transparent</span>
+                        <span>Opaque</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDesktopOpacityChange(100)}
+                        className="mt-4 w-full text-center text-xs text-indigo-300 hover:text-white border border-indigo-500/40 rounded-lg py-1.5"
+                      >
+                        Reset to 100%
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="h-6 w-px bg-slate-800"></div>
+              </div>
+            )}
              <a href="#" className="text-slate-400 hover:text-white transition-colors">
                 <Github size={20} />
              </a>
@@ -221,6 +461,24 @@ function App() {
                 <Plus size={18} />
                 <span className="hidden sm:inline">New Prompt</span>
              </button>
+             {isDesktopShell && (
+               <div className="flex items-center gap-2" style={noDragRegionStyle}>
+                 <button
+                   onClick={handleMinimizeWindow}
+                   className="p-2 rounded-full text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                   title="Minimize"
+                 >
+                   <Minus size={16} />
+                 </button>
+                 <button
+                   onClick={handleCloseWindow}
+                   className="p-2 rounded-full text-slate-400 hover:text-white hover:bg-red-500/80 transition-colors"
+                   title="Close"
+                 >
+                   <XCircle size={16} />
+                 </button>
+               </div>
+             )}
           </div>
         </div>
       </header>
@@ -272,8 +530,16 @@ function App() {
                             className="flex-1 min-w-[120px] bg-slate-900 border border-slate-800 text-slate-300 text-sm rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none cursor-pointer hover:border-slate-700"
                         >
                             <option value="All">All Models</option>
-                            {Object.values(AIModel).map(m => <option key={m} value={m}>{m}</option>)}
+                            {models.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>
+
+                        <button
+                            onClick={() => setIsModelManagerOpen(true)}
+                            className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
+                            title="Manage Models"
+                        >
+                            <SlidersHorizontal size={16} />
+                        </button>
                     </div>
 
                     <div className="flex items-center justify-between gap-2">
@@ -292,7 +558,7 @@ function App() {
                             </button>
                         </div>
                         
-                         <button
+                        <button
                             onClick={addCurrentAsQuickFilter}
                             className="text-xs flex items-center gap-1 text-indigo-400 hover:text-indigo-300 px-3 py-1.5 rounded-full bg-indigo-900/20 border border-indigo-500/30 transition-colors"
                         >
@@ -363,6 +629,7 @@ function App() {
         onSave={handleSavePrompt}
         initialData={editingPrompt}
         categories={categories}
+        models={models}
       />
 
       <CategoryManager
@@ -371,6 +638,14 @@ function App() {
         categories={categories}
         onAddCategory={handleAddCategory}
         onRemoveCategory={handleRemoveCategory}
+      />
+
+      <ModelManager
+        isOpen={isModelManagerOpen}
+        onClose={() => setIsModelManagerOpen(false)}
+        models={models}
+        onAddModel={handleAddModel}
+        onRemoveModel={handleRemoveModel}
       />
     </div>
   );

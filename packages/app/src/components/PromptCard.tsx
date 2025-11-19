@@ -28,14 +28,17 @@ const getCategoryIcon = (category: string) => {
   return <Hash size={16} className="text-indigo-400" />;
 };
 
+const MODEL_COLOR_MAP: Record<string, string> = {
+  Gemini: 'bg-blue-900/50 text-blue-200 border-blue-700',
+  'GPT-4': 'bg-green-900/50 text-green-200 border-green-700',
+  'Claude 3': 'bg-orange-900/50 text-orange-200 border-orange-700',
+  Midjourney: 'bg-purple-900/50 text-purple-200 border-purple-700',
+  Other: 'bg-slate-700/70 text-slate-100 border-slate-600'
+};
+
 const getModelColor = (model: AIModel) => {
-    switch(model) {
-        case AIModel.Gemini: return 'bg-blue-900/50 text-blue-200 border-blue-700';
-        case AIModel.GPT4: return 'bg-green-900/50 text-green-200 border-green-700';
-        case AIModel.Claude3: return 'bg-orange-900/50 text-orange-200 border-orange-700';
-        default: return 'bg-slate-800 text-slate-300 border-slate-600';
-    }
-}
+  return MODEL_COLOR_MAP[model] ?? 'bg-slate-800 text-slate-300 border-slate-600';
+};
 
 export const PromptCard: React.FC<PromptCardProps> = ({ prompt, onCopy, onEdit, onDelete, onToggleFavorite }) => {
   const [copied, setCopied] = useState(false);

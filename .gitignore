@@ -10,6 +10,9 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+apps/chrome-extension/PromptVault-extension.zip
+apps/desktop/static
+apps/desktop/release
 *.local
 
 # Editor directories and files

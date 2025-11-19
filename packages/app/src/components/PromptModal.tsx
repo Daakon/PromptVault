@@ -10,17 +10,19 @@ interface PromptModalProps {
   onSave: (data: PromptFormData) => void;
   initialData?: Prompt;
   categories: string[];
+  models: AIModel[];
 }
 
-export const PromptModal: React.FC<PromptModalProps> = ({ isOpen, onClose, onSave, initialData, categories }) => {
+export const PromptModal: React.FC<PromptModalProps> = ({ isOpen, onClose, onSave, initialData, categories, models }) => {
   // Helper to safely get a default category
   const defaultCategory = categories.length > 0 ? categories[0] : 'General';
+  const defaultModel = models.length > 0 ? models[0] : 'Custom';
 
   const [formData, setFormData] = useState<PromptFormData>({
     title: '',
     content: '',
     tags: '',
-    models: [AIModel.Gemini],
+    models: [defaultModel],
     category: defaultCategory
   });
 
@@ -42,12 +44,12 @@ export const PromptModal: React.FC<PromptModalProps> = ({ isOpen, onClose, onSav
             title: '',
             content: '',
             tags: '',
-            models: [AIModel.Gemini],
+            models: [defaultModel],
             category: defaultCategory
         });
       }
     }
-  }, [isOpen, initialData, categories, defaultCategory]);
+  }, [isOpen, initialData, categories, defaultCategory, defaultModel]);
 
   const handleEnhance = async () => {
     if (!formData.content) return;
@@ -88,7 +90,7 @@ export const PromptModal: React.FC<PromptModalProps> = ({ isOpen, onClose, onSav
       const models = prev.models.includes(model)
         ? prev.models.filter(m => m !== model)
         : [...prev.models, model];
-      return { ...prev, models: models.length ? models : [AIModel.Gemini] }; // Ensure at least one
+      return { ...prev, models: models.length ? models : [defaultModel] }; // Ensure at least one
     });
   };
 
@@ -138,7 +140,10 @@ export const PromptModal: React.FC<PromptModalProps> = ({ isOpen, onClose, onSav
           <div className="space-y-2">
             <label className="block text-sm font-medium text-slate-400">Compatible Models</label>
             <div className="flex flex-wrap gap-2">
-              {Object.values(AIModel).map(model => (
+              {models.length === 0 && (
+                <span className="text-xs text-slate-500">Add models from the dashboard to tag compatibility.</span>
+              )}
+              {models.map(model => (
                 <button
                   key={model}
                   type="button"
