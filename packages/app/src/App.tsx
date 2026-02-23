@@ -93,24 +93,10 @@ const migrateStoredModels = (value: unknown): AIModel[] => {
   return withRequired.length ? withRequired : DEFAULT_MODELS;
 };
 
-const migratePromptModelSelection = (value: unknown): AIModel[] => {
-  if (!Array.isArray(value)) return [DEFAULT_MODELS[0] ?? 'Other'];
-  const migrated = dedupeModels(
-    value
-      .map(normalizeModelName)
-      .filter((model): model is AIModel => Boolean(model))
-  );
-  return migrated.length ? migrated : [DEFAULT_MODELS[0] ?? 'Other'];
-};
-
 const migrateStoredPrompts = (value: unknown): Prompt[] => {
-  if (!Array.isArray(value)) return INITIAL_PROMPTS;
-  return value
-    .filter((item): item is Prompt => Boolean(item) && typeof item === 'object')
-    .map((prompt) => ({
-      ...prompt,
-      models: migratePromptModelSelection(prompt.models),
-    }));
+  // Safety policy: never auto-mutate or clear stored prompts during startup migration.
+  // Prompt data changes should only happen via explicit user actions (edit/import/delete).
+  return Array.isArray(value) ? (value as Prompt[]) : INITIAL_PROMPTS;
 };
 
 const migrateStoredQuickFilters = (value: unknown): QuickFilter[] => {
