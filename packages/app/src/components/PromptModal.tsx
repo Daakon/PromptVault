@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Loader2, Wand2 } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Prompt, PromptFormData, AIModel } from '../types';
-import { enhancePromptLogic, suggestTagsLogic } from '../services/geminiService';
 
 interface PromptModalProps {
   isOpen: boolean;
@@ -26,9 +25,6 @@ export const PromptModal: React.FC<PromptModalProps> = ({ isOpen, onClose, onSav
     category: defaultCategory
   });
 
-  const [isEnhancing, setIsEnhancing] = useState(false);
-  const [isSuggestingTags, setIsSuggestingTags] = useState(false);
-
   useEffect(() => {
     if (isOpen) {
       if (initialData) {
@@ -50,34 +46,6 @@ export const PromptModal: React.FC<PromptModalProps> = ({ isOpen, onClose, onSav
       }
     }
   }, [isOpen, initialData, categories, defaultCategory, defaultModel]);
-
-  const handleEnhance = async () => {
-    if (!formData.content) return;
-    setIsEnhancing(true);
-    try {
-        const enhanced = await enhancePromptLogic(formData.content);
-        setFormData(prev => ({ ...prev, content: enhanced }));
-    } catch (e) {
-        alert("Could not enhance prompt. Check API Key.");
-    } finally {
-        setIsEnhancing(false);
-    }
-  };
-
-  const handleAutoTags = async () => {
-      if(!formData.content) return;
-      setIsSuggestingTags(true);
-      try {
-          const tags = await suggestTagsLogic(formData.content);
-          const currentTags = formData.tags ? formData.tags.split(',').map(t => t.trim()) : [];
-          const uniqueTags = Array.from(new Set([...currentTags, ...tags])).filter(t => t);
-          setFormData(prev => ({ ...prev, tags: uniqueTags.join(', ') }));
-      } catch(e) {
-        console.error(e);
-      } finally {
-          setIsSuggestingTags(false);
-      }
-  }
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,44 +130,22 @@ export const PromptModal: React.FC<PromptModalProps> = ({ isOpen, onClose, onSav
 
           {/* Content */}
           <div className="space-y-2">
-            <div className="flex justify-between items-center">
-                <label className="block text-sm font-medium text-slate-400">Prompt Content</label>
-                <button
-                    type="button"
-                    onClick={handleEnhance}
-                    disabled={isEnhancing || !formData.content}
-                    className="flex items-center gap-1.5 text-xs font-medium text-purple-400 hover:text-purple-300 disabled:opacity-50 transition-colors"
-                >
-                    {isEnhancing ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                    Magic Enhance
-                </button>
-            </div>
+            <label className="block text-sm font-medium text-slate-400">Prompt Content</label>
             <textarea
               required
               value={formData.content}
               onChange={e => setFormData({...formData, content: e.target.value})}
-              placeholder="Describe what you want the AI to do..."
+              placeholder="Describe what you want this prompt to do..."
               className="w-full h-48 bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm leading-relaxed"
             />
             <p className="text-xs text-slate-500">
-                Tip: Use "Magic Enhance" to turn a simple instruction into a structured prompt.
+                PromptVault runs fully locally. Enter and refine prompt text manually.
             </p>
           </div>
 
           {/* Tags */}
           <div className="space-y-2">
-            <div className="flex justify-between items-center">
-                <label className="block text-sm font-medium text-slate-400">Tags (comma separated)</label>
-                <button
-                    type="button"
-                    onClick={handleAutoTags}
-                    disabled={isSuggestingTags || !formData.content}
-                    className="flex items-center gap-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 disabled:opacity-50 transition-colors"
-                >
-                    {isSuggestingTags ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
-                    Suggest Tags
-                </button>
-            </div>
+            <label className="block text-sm font-medium text-slate-400">Tags (comma separated)</label>
             <input
               type="text"
               value={formData.tags}
@@ -207,6 +153,9 @@ export const PromptModal: React.FC<PromptModalProps> = ({ isOpen, onClose, onSav
               placeholder="coding, react, hook..."
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
+            <p className="text-xs text-slate-500">
+              Add tags manually for local organization.
+            </p>
           </div>
 
           {/* Footer */}

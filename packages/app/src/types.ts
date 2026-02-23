@@ -3,9 +3,12 @@ export type AIModel = string;
 
 export const DEFAULT_MODELS: AIModel[] = [
   'Gemini',
-  'GPT-4',
-  'Claude 3',
-  'Midjourney',
+  'ChatGPT',
+  'Claude',
+  'GPT Codex',
+  'Claude Code',
+  'MS Copilot',
+  'GitHub Copilot',
   'Other'
 ];
 

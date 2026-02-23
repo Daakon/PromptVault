@@ -1,10 +1,12 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Search, Command, Github, LayoutGrid, List, Filter, SlidersHorizontal, X, Tag, Settings, Pin, Droplet, Minus, XCircle } from 'lucide-react';
+import { Plus, Search, Command, LayoutGrid, List, Filter, SlidersHorizontal, X, Tag, Settings, Pin, Droplet, Minus, XCircle, RefreshCcw, Move } from 'lucide-react';
 import { Prompt, AIModel, Category, PromptFormData, QuickFilter, DEFAULT_MODELS } from './types';
 import { PromptCard } from './components/PromptCard';
 import { PromptModal } from './components/PromptModal';
 import { CategoryManager } from './components/CategoryManager';
+import { ModelManager } from './components/ModelManager';
+import { ImportExportModal } from './components/ImportExportModal';
 import { ModelManager } from './components/ModelManager';
 
 // Initial Data
@@ -18,7 +20,7 @@ const INITIAL_PROMPTS: Prompt[] = [
     title: 'React Component Generator',
     content: 'Act as a senior React developer. Create a reusable, accessible component using TypeScript and Tailwind CSS. Follow modern best practices, including proper prop typing and responsive design. The component to build is: [COMPONENT_NAME].',
     tags: ['react', 'typescript', 'frontend'],
-    models: ['Gemini', 'GPT-4'],
+    models: ['ChatGPT', 'GitHub Copilot'],
     category: 'Coding',
     isFavorite: true,
     lastUsed: Date.now()
@@ -28,7 +30,7 @@ const INITIAL_PROMPTS: Prompt[] = [
     title: 'Technical Blog Post',
     content: 'Write a technical blog post about [TOPIC]. The tone should be professional yet accessible. Structure the post with an engaging introduction, clear headings, code snippets where relevant, and a summary conclusion. Optimize for SEO with keywords: [KEYWORDS].',
     tags: ['writing', 'seo', 'blog'],
-    models: ['Claude 3', 'Gemini'],
+    models: ['Claude', 'Gemini'],
     category: 'Writing',
     isFavorite: false,
     lastUsed: Date.now() - 100000
@@ -38,7 +40,7 @@ const INITIAL_PROMPTS: Prompt[] = [
     title: 'Python Data Analysis',
     content: 'I have a dataset containing [DATA_DESCRIPTION]. Write a Python script using Pandas and Matplotlib to clean the data, perform exploratory data analysis, and visualize the following trends: [TRENDS].',
     tags: ['python', 'data', 'pandas'],
-    models: ['GPT-4'],
+    models: ['GPT Codex', 'Claude Code', 'MS Copilot'],
     category: 'Data Analysis',
     isFavorite: false,
     lastUsed: Date.now() - 200000
@@ -51,27 +53,103 @@ const INITIAL_QUICK_FILTERS: QuickFilter[] = [
 ];
 
 const DESKTOP_READY_EVENT = 'promptvault-desktop-ready';
+const LEGACY_MODEL_RENAMES: Record<string, AIModel> = {
+  'GPT-4': 'ChatGPT',
+  'Claude 3': 'Claude',
+};
+const REMOVED_MODELS = new Set<AIModel>(['Midjourney']);
+const REQUIRED_MODELS = new Set<AIModel>(['MS Copilot', 'GitHub Copilot']);
+
+const parseStoredJson = (key: string): unknown => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeModelName = (value: unknown): AIModel | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const renamed = LEGACY_MODEL_RENAMES[trimmed] ?? trimmed;
+  return REMOVED_MODELS.has(renamed) ? null : renamed;
+};
+
+const dedupeModels = (values: AIModel[]): AIModel[] => Array.from(new Set(values));
+
+const migrateStoredModels = (value: unknown): AIModel[] => {
+  if (!Array.isArray(value)) return DEFAULT_MODELS;
+  const migrated = dedupeModels(
+    value
+      .map(normalizeModelName)
+      .filter((model): model is AIModel => Boolean(model))
+  );
+  const withRequired = dedupeModels([
+    ...migrated,
+    ...Array.from(REQUIRED_MODELS).filter((model) => DEFAULT_MODELS.includes(model)),
+  ]);
+  return withRequired.length ? withRequired : DEFAULT_MODELS;
+};
+
+const migratePromptModelSelection = (value: unknown): AIModel[] => {
+  if (!Array.isArray(value)) return [DEFAULT_MODELS[0] ?? 'Other'];
+  const migrated = dedupeModels(
+    value
+      .map(normalizeModelName)
+      .filter((model): model is AIModel => Boolean(model))
+  );
+  return migrated.length ? migrated : [DEFAULT_MODELS[0] ?? 'Other'];
+};
+
+const migrateStoredPrompts = (value: unknown): Prompt[] => {
+  if (!Array.isArray(value)) return INITIAL_PROMPTS;
+  return value
+    .filter((item): item is Prompt => Boolean(item) && typeof item === 'object')
+    .map((prompt) => ({
+      ...prompt,
+      models: migratePromptModelSelection(prompt.models),
+    }));
+};
+
+const migrateStoredQuickFilters = (value: unknown): QuickFilter[] => {
+  if (!Array.isArray(value)) return INITIAL_QUICK_FILTERS;
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+
+    const filter = item as QuickFilter;
+    if (filter.type !== 'model') return [filter];
+
+    const migratedValue = normalizeModelName(filter.value);
+    if (!migratedValue) return [];
+
+    return [{
+      ...filter,
+      value: migratedValue,
+      label: filter.label === filter.value ? migratedValue : filter.label,
+    }];
+  });
+};
 
 function App() {
   // State
   const [prompts, setPrompts] = useState<Prompt[]>(() => {
-    const saved = localStorage.getItem('pv_prompts');
-    return saved ? JSON.parse(saved) : INITIAL_PROMPTS;
+    return migrateStoredPrompts(parseStoredJson('pv_prompts'));
   });
 
   const [categories, setCategories] = useState<string[]>(() => {
-      const saved = localStorage.getItem('pv_categories');
-      return saved ? JSON.parse(saved) : INITIAL_CATEGORIES;
+      const saved = parseStoredJson('pv_categories');
+      return Array.isArray(saved) ? saved : INITIAL_CATEGORIES;
   });
 
   const [models, setModels] = useState<AIModel[]>(() => {
-      const saved = localStorage.getItem('pv_models');
-      return saved ? JSON.parse(saved) : DEFAULT_MODELS;
+      return migrateStoredModels(parseStoredJson('pv_models'));
   });
 
   const [quickFilters, setQuickFilters] = useState<QuickFilter[]>(() => {
-      const saved = localStorage.getItem('pv_quick_filters');
-      return saved ? JSON.parse(saved) : INITIAL_QUICK_FILTERS;
+      return migrateStoredQuickFilters(parseStoredJson('pv_quick_filters'));
   });
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,8 +159,10 @@ function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false);
   const [isModelManagerOpen, setIsModelManagerOpen] = useState(false);
+  const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [editingPrompt, setEditingPrompt] = useState<Prompt | undefined>(undefined);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [isFiltersOpen, setIsFiltersOpen] = useState(true);
   const [desktopAlwaysOnTop, setDesktopAlwaysOnTop] = useState<boolean | null>(null);
   const [desktopOpacity, setDesktopOpacity] = useState<number | null>(null);
   const [isDesktopControlsOpen, setIsDesktopControlsOpen] = useState(false);
@@ -317,6 +397,26 @@ function App() {
     window.desktop?.closeWindow?.();
   };
 
+  const handleImportPrompts = (incoming: Prompt[]) => {
+    setPrompts(prev => {
+      const existing = new Map(prev.map(p => [p.id, p]));
+      const normalized = incoming.map(prompt => {
+        const id = prompt.id && !existing.has(prompt.id) ? prompt.id : crypto.randomUUID();
+        return {
+          id,
+          title: prompt.title || 'Untitled Prompt',
+          content: prompt.content || '',
+          tags: Array.isArray(prompt.tags) ? prompt.tags : [],
+          models: Array.isArray(prompt.models) && prompt.models.length ? prompt.models : [models[0] ?? 'Custom'],
+          category: prompt.category || categories[0] || 'General',
+          isFavorite: Boolean(prompt.isFavorite),
+          lastUsed: prompt.lastUsed ?? Date.now()
+        } as Prompt;
+      });
+      return [...normalized, ...prev];
+    });
+  };
+
   // Quick Filters Logic
   const applyQuickFilter = (filter: QuickFilter) => {
       if (filter.type === 'category') {
@@ -387,17 +487,29 @@ function App() {
     <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-indigo-500/30">
       {/* Header */}
       <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-800" style={dragRegionStyle}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between" style={noDragRegionStyle}>
-          <div className="flex items-center gap-3">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center gap-4">
+          <div className="flex items-center gap-3" style={noDragRegionStyle}>
             <div className="bg-indigo-600 p-2 rounded-lg">
                 <Command size={20} className="text-white" />
             </div>
             <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-400 hidden sm:block">
-              PromptVault
+              Prompt Vault
             </h1>
           </div>
 
-          <div className="flex items-center gap-4" style={noDragRegionStyle}>
+          {isDesktopShell && (
+            <div
+              aria-hidden="true"
+              className="flex-1 flex items-center justify-center h-10 rounded-lg border border-dashed border-slate-800/70 text-[11px] font-semibold tracking-wide uppercase text-slate-500/80 hover:text-slate-200 hover:border-slate-700/80 transition-colors cursor-grab active:cursor-grabbing select-none px-3 gap-2"
+              style={dragRegionStyle}
+              title="Drag to move the window"
+            >
+              <Move size={14} className="opacity-70" />
+              Drag window
+            </div>
+          )}
+
+          <div className="ml-auto flex items-center gap-4" style={noDragRegionStyle}>
             {isDesktopShell && (
               <div className="flex items-center gap-2">
                 <button
@@ -450,18 +562,14 @@ function App() {
                 <div className="h-6 w-px bg-slate-800"></div>
               </div>
             )}
-             <a href="#" className="text-slate-400 hover:text-white transition-colors">
-                <Github size={20} />
-             </a>
-             <div className="h-6 w-px bg-slate-800"></div>
-             <button 
-                onClick={() => { setEditingPrompt(undefined); setIsModalOpen(true); }}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-lg shadow-indigo-900/20 hover:scale-105"
+            <button
+              onClick={() => setIsTransferModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-800 text-slate-400 hover:text-white hover:border-slate-600 transition-colors"
             >
-                <Plus size={18} />
-                <span className="hidden sm:inline">New Prompt</span>
-             </button>
-             {isDesktopShell && (
+              <RefreshCcw size={16} />
+              <span className="hidden sm:inline text-sm">Import / Export</span>
+            </button>
+            {isDesktopShell && (
                <div className="flex items-center gap-2" style={noDragRegionStyle}>
                  <button
                    onClick={handleMinimizeWindow}
@@ -487,6 +595,16 @@ function App() {
         
         {/* Toolbar */}
         <div className="mb-8 space-y-4">
+            <div className="flex items-center justify-between text-sm text-slate-400">
+              <span>Search & Filters</span>
+              <button
+                onClick={() => setIsFiltersOpen(prev => !prev)}
+                className="px-3 py-1 rounded-lg border border-slate-800 hover:border-slate-600 hover:text-white transition-colors"
+              >
+                {isFiltersOpen ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            {isFiltersOpen && (
             <div className="flex flex-col gap-4 justify-between">
                 {/* Search */}
                 <div className="relative w-full">
@@ -568,6 +686,7 @@ function App() {
                     </div>
                 </div>
             </div>
+            )}
 
             {/* Quick Filters Bar */}
             {quickFilters.length > 0 && (
@@ -623,6 +742,14 @@ function App() {
 
       </main>
 
+      <button
+        onClick={() => { setEditingPrompt(undefined); setIsModalOpen(true); }}
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-2xl shadow-indigo-900/40 flex items-center justify-center text-2xl"
+        aria-label="Create prompt"
+      >
+        <Plus size={24} />
+      </button>
+
       <PromptModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -646,6 +773,13 @@ function App() {
         models={models}
         onAddModel={handleAddModel}
         onRemoveModel={handleRemoveModel}
+      />
+
+      <ImportExportModal
+        isOpen={isTransferModalOpen}
+        onClose={() => setIsTransferModalOpen(false)}
+        prompts={filteredPrompts}
+        onImport={handleImportPrompts}
       />
     </div>
   );

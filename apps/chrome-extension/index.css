@@ -2,15 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Local-only baseline styles; no external CDN stylesheets/scripts are required. */
-
 body {
   background-color: #0f172a;
   color: #f8fafc;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-/* Custom Scrollbar for Chrome/Edge/Safari */
 ::-webkit-scrollbar {
   width: 8px;
 }

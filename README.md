@@ -8,6 +8,13 @@ PromptVault is evolving from a single React app into a multi-target workspace th
 
 The repo now uses npm workspaces with shared packages so logic and presentation live in one place.
 
+PromptVault is now local-first and self-contained:
+
+- No Gemini integration
+- No API keys required
+- No outbound API calls from the shared app or extension
+- No CDN-loaded runtime scripts or web fonts in the app shells
+
 ## Repository layout
 
 ```
@@ -23,15 +30,6 @@ packages/
 
 - Node.js 18+
 - npm 10+
-- A Gemini API key (for prompt enhancement/tag suggestions)
-
-Create `.env.local` at the repo root and set:
-
-```
-GEMINI_API_KEY=your-key-here
-```
-
-Both Vite configs read from the repo root so the same key is injected everywhere.
 
 ## Install dependencies
 
@@ -41,6 +39,37 @@ npm install
 
 This installs workspace dependencies and links the shared package across apps.
 
+It also installs the local Tailwind/PostCSS build toolchain used to generate CSS at build time (runtime remains self-contained with no CDN styling dependencies).
+
+## Build commands (quick reference)
+
+Use these root-level commands for the common workflows:
+
+```bash
+npm run dev:web
+npm run build:web
+npm run dev:extension
+npm run build:extension
+npm run dev:desktop
+npm run build:desktop
+npm run package:desktop
+```
+
+What each command produces:
+
+- `npm run build:web` builds the shared renderer bundle to `apps/web/dist` (including locally generated Tailwind CSS).
+- `npm run build:extension` builds the Chrome extension bundle to `apps/chrome-extension/dist`.
+- `npm run build:desktop` does not create an installer; it copies `apps/web/dist` into `apps/desktop/static` for local Electron production runs.
+- `npm run package:desktop` builds web + desktop static assets and then runs `electron-builder` to create installable desktop artifacts.
+
+### Output locations
+
+- Web production bundle: `apps/web/dist/`
+- Chrome extension unpacked bundle: `apps/chrome-extension/dist/`
+- Chrome extension ZIP package: `apps/chrome-extension/PromptVault-extension.zip`
+- Desktop local static bundle (consumed by Electron in production mode): `apps/desktop/static/`
+- Desktop packaged artifacts/installers: `apps/desktop/release/`
+
 ## Web app (reference implementation)
 
 ```bash
@@ -49,6 +78,10 @@ npm run build:web  # Output production bundle to apps/web/dist
 ```
 
 The web app should be your primary playground for UI/logic changes—updates propagate automatically to the extension/desktop via the shared package.
+
+Build note:
+
+- If you change shared UI styling or Tailwind classes, rerun `npm run build:web` before refreshing desktop static assets or packaging the desktop app.
 
 ## Chrome extension
 
@@ -68,6 +101,21 @@ npm run package --workspace @prompt-vault/chrome-extension
 ```
 
 The packaging script zips `apps/chrome-extension/dist` into `apps/chrome-extension/PromptVault-extension.zip`, ready for Chrome Web Store submission.
+
+Build note:
+
+- The extension now uses locally built CSS (no Tailwind CDN at runtime), so `npm run build:extension` is required after styling changes.
+
+## Managing categories and models
+
+Category and model lists are managed directly in the app UI (web, extension, and desktop all use the same shared interface logic).
+
+- Categories: use the gear button next to the category filter to open **Manage Categories**.
+- Models: use the sliders button next to the model filter to open **Manage Models**.
+- Additions/removals persist locally in browser/Electron storage (`localStorage`).
+- Removing a category does **not** delete prompts in that category; prompts remain and only the category list entry is removed.
+- Removing a model also clears matching model quick-filters and resets the active model filter if that model was selected.
+- Changes are local to the current profile/device unless you export/import prompts.
 
 ## Desktop shells (Electron)
 
@@ -93,6 +141,12 @@ npm run start --workspace @prompt-vault/desktop
 
 The `@prompt-vault/desktop` build script copies `apps/web/dist` into `apps/desktop/static`, which the Electron shell consumes when no dev server URL is provided.
 
+Desktop build notes:
+
+- `npm run build:desktop` only refreshes `apps/desktop/static`; it is not an installer build.
+- If the desktop app looks unstyled, rebuild in this order: `npm run build:web` then `npm run build:desktop`, then restart the Electron app.
+- If the Electron app is already running while `apps/desktop/static` is refreshed, fully restart it to load the new assets.
+
 The desktop shell hides its menu bar for a cleaner look and now exposes native controls directly in the header: a pin toggle (to keep the window on top) and a transparency popover that adjusts opacity for distraction-free workflows. Set the environment variable `PROMPTVAULT_ALWAYS_ON_TOP=true` or `PROMPTVAULT_OPACITY=0.85` before starting the desktop app if you want default pinning/opacity.
 
 ### Packaging (Electron Builder)
@@ -108,7 +162,7 @@ This script:
 2. Copies it into `apps/desktop/static`.
 3. Invokes `electron-builder` with configuration from `apps/desktop/electron-builder.yml`.
 
-Artifacts land in `apps/desktop/release/` (e.g., `PromptVault-win-0.1.0.exe` plus the unpacked folder). The config currently disables executable editing/signing so it runs without elevated privileges; once you have certificates, remove `signAndEditExecutable: false`.
+Artifacts land in `apps/desktop/release/` (e.g., `PromptVault-win-0.1.0.exe`, `win-unpacked/`, and builder metadata files). Windows packaging is configured as an `nsis` installer (`.exe`). The config currently disables executable editing/signing so it runs without elevated privileges; once you have certificates, remove `signAndEditExecutable: false`.
 
 ## Testing & QA
 
@@ -117,11 +171,11 @@ Focus manual verification on the scenarios below whenever you touch shared logic
 **Web App**
 - CRUD prompts: create, edit, and delete entries; confirm persistence in localStorage.
 - Filtering/search: category toggles, model filters, quick filters, and keyword search should all combine without stale results.
-- Prompt enhancement/tag suggestions: set `GEMINI_API_KEY`, click enhance/tag buttons, and handle failures gracefully when the key is missing.
+- Prompt editing/tagging: create and edit prompts entirely locally; confirm no API key prompts or network-dependent enhancement actions appear.
 
 **Chrome Extension**
 - Run `npm run dev:extension`, load the unpacked side panel from `apps/chrome-extension/dist`, and verify all core flows above.
-- Validate Chrome-specific affordances: side panel sizing, persistent state between sessions, clipboard copy via the browser, and permission prompts (storage, host permissions).
+- Validate Chrome-specific affordances: side panel sizing, persistent state between sessions, clipboard copy via the browser, and permission prompts (storage only; no host permissions).
 - Perform a final release dry run with `npm run package --workspace @prompt-vault/chrome-extension` and sideload the generated ZIP.
 
 **Desktop**
